@@ -1,7 +1,7 @@
 use crate::{Claims, StoredKeys, JWTK};
 
 pub fn validate_token(
-    token: &String,
+    token: &str,
     current_keys: &StoredKeys,
 ) -> anyhow::Result<jsonwebtoken::TokenData<Claims>> {
 
@@ -14,7 +14,7 @@ pub fn validate_token(
     let decoding_key: jsonwebtoken::DecodingKey =
         jsonwebtoken::DecodingKey::from_rsa_components(&public_key_to_use.n, &public_key_to_use.e)?;
     
-    let expected_aud: String = "api://default".to_string();
+    let expected_aud: String = "https://cornercam.net".to_string();
     
     let mut validation: jsonwebtoken::Validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
     

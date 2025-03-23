@@ -2,11 +2,11 @@ use aws_lambda_events::apigw::{
     ApiGatewayCustomAuthorizerPolicy, ApiGatewayCustomAuthorizerResponse, IamPolicyStatement,
 };
 
-use crate::{AuthContext, Claims};
+use crate::{AuthResponse, Claims};
 
 pub fn prepare_response(
     validated_token: anyhow::Result<jsonwebtoken::TokenData<Claims>>,
-) -> anyhow::Result<ApiGatewayCustomAuthorizerResponse<AuthContext>> {
+) -> anyhow::Result<ApiGatewayCustomAuthorizerResponse<AuthResponse>> {
     let policy = match validated_token {
         Ok(token_data) => {
             let path_to_allow = format!(
@@ -47,8 +47,11 @@ pub fn prepare_response(
     let resp = ApiGatewayCustomAuthorizerResponse {
         principal_id: Some("12345abc".to_string()),
         policy_document: policy,
-        context: AuthContext {
-            text: "dummy context".to_string(),
+        context: AuthResponse {
+            auths: vec![],
+            error: "".to_string(),
+            gyms: vec![],
+            next_page: "".to_string(),
         },
         usage_identifier_key: None,
     };

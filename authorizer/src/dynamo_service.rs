@@ -1,6 +1,12 @@
+use anyhow::Error;
 use anyhow::{anyhow, Context};
+use serde_dynamo::from_items;
+use chrono::Local;
 
+use super::GymAuth;
 use super::JWTKResponse;
+
+const TABLE_NAME: &'static str = "CCUserService";
 
 pub async fn get_dynamo_client() -> aws_sdk_dynamodb::Client {
     let region_provider =
@@ -58,4 +64,84 @@ pub(crate) async fn store_keys_in_dynamo(
         .await?;
 
     Ok(())
+}
+
+pub(crate) async fn fetch_auths_for_user(
+    dynamo_client: &aws_sdk_dynamodb::Client,
+    user_id: &String
+) -> Result<Vec<GymAuth>, Error> {
+    let pk = format!("USER#{user_id}");
+    let sk = format!("GYM#");
+    let results = dynamo_client
+        .query()
+        .table_name(TABLE_NAME)
+        .expression_attribute_values(":user_id", aws_sdk_dynamodb::types::AttributeValue::S(pk))
+        .expression_attribute_values(":gym_id", aws_sdk_dynamodb::types::AttributeValue::S(sk))
+        .key_condition_expression("PK = :user_id AND begins_with ( SK, :gym_id )")
+        .send()
+        .await.expect("ERROR when querying dynamoDB");
+
+    if let Some(items) = results.items {
+        let auths = from_items(items).expect("ERROR decoding items into GymAuth objects");
+        Ok(auths)
+    } else {
+        Ok(vec![])
+    }
+}
+
+pub(crate) async fn fetch_auth_for_user(
+    dynamo_client: &aws_sdk_dynamodb::Client,
+    user_id: &String,
+    gym_id: &str
+) -> Result<GymAuth, Error> {
+    let pk = format!("USER#{user_id}");
+    let sk = format!("GYM#{gym_id}");
+    let results = dynamo_client
+        .query()
+        .table_name(TABLE_NAME)
+        .expression_attribute_values(":user_id", aws_sdk_dynamodb::types::AttributeValue::S(pk))
+        .expression_attribute_values(":gym_id", aws_sdk_dynamodb::types::AttributeValue::S(sk))
+        .key_condition_expression("PK = :user_id")
+        .key_condition_expression("SK = :gym_id")
+        .send()
+        .await.expect("ERROR when querying dynamoDB");
+
+    if let Some(items) = results.items {
+        let auths: Vec<GymAuth> = from_items(items).expect("ERROR decoding items into GymAuth objects");
+        if auths.iter().count() != 1 {
+            return Err(Error::msg("incorrect number of auths found for user and gym"));
+        }
+        Ok(auths.first().unwrap())
+    } else {
+        Err(Error::msg("unable to get gym auths from dynamodb"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_fetch_auths_for_user() {
+        let dynamo_client = get_dynamo_client().await;
+        let user_id = String::from("john.nimis@gmail.com");
+        let john_auth = fetch_auths_for_user(&dynamo_client, &user_id)
+            .await
+            .expect("unable to get response from dynamo");
+        assert!(john_auth.iter().count() == 1);
+        assert!(john_auth[0].access_expires == "2025-10-19");
+    }
+
+    // #[tokio::test]
+    // async fn test_decode_header() {
+    //     let token = load_test_data();
+    //     let header = decode_header(&token).expect("can't unwrap decoded header");
+    //     assert_eq!(header.alg, Algorithm::RS256);
+    // }
+
+    // #[tokio::test]
+    // async fn test_load_data() {
+    //     let data = load_test_data();
+    //     assert_eq!(data, "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ik5VUXpRVU13T1RoR1FqbEZORFJGTkVaRFFUQTJOemt6T1RBME16RkZNVGhFUVVGR1JqaEdRZyJ9.eyJjb3JuZXJjYW1lbWFpbCI6ImpvaG4ubmltaXNAZ21haWwuY29tIiwiaXNzIjoiaHR0cHM6Ly9vbmVtYW5iYW5kLmF1dGgwLmNvbS8iLCJzdWIiOiJnb29nbGUtb2F1dGgyfDEwNjY0NzM1NDk5NjcwMTMwNjIzMSIsImF1ZCI6WyJodHRwczovL2Nvcm5lcmNhbS5uZXQiLCJodHRwczovL29uZW1hbmJhbmQuYXV0aDAuY29tL3VzZXJpbmZvIl0sImlhdCI6MTc0MTU3NzMwNiwiZXhwIjoxNzQxNjYzNzA2LCJzY29wZSI6Im9wZW5pZCIsImF6cCI6InNlTk5aNzMybTh5TnFWZHRtdXdxRlV0QzZObHZMeUV3In0.pu9sJWdgWW9iWPFKp0vhIAAJb8jIlrgAzZxsIiKyjaaLFhqnfS4Ot4uac52tXY2hJfXkIVoKxUIDMZ4kXdz0z_aApY4PzZaCVsluVZKsj_9k1OCADr6MAsr50gE-8LJhtQrlm8T2cNjepmpFZNrXGKhOe38ZzfbO-sSaPq4PT2ZN5686l6Pe2CWFw3mHxYlInGN79MtSzdeXBNUWCZX-lhMHcVeRXVJnRfVu0Ab8JB4hKdLNhHtaKw35u35gkZ3ZPMe64AviyrOiSVgrsdWmVVw22T-Xoz8ZmP1oTAdBi0_mh2tbRuMftVWLxZEyEUVXcXZ0zE9ocSTkiKfiTOyuBg");
+    // }
 }
