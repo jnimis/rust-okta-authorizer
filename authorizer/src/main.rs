@@ -1,6 +1,6 @@
 use aws_lambda_events::apigw::{
     ApiGatewayCustomAuthorizerRequestTypeRequest,
-    ApiGatewayCustomAuthorizerResponse
+    ApiGatewayCustomAuthorizerResponse, ApiGatewayV2CustomAuthorizerSimpleResponse
 };
 
 use aws_sdk_dynamodb::Client;
@@ -23,7 +23,7 @@ enum AuthPages {
     Payment,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GymAuth {
     PK: String,
     SK: String,
@@ -85,72 +85,99 @@ async fn function_handler(
         .expect("couldn't get Authorization header from request")
         .to_str()
         .expect("couldn't convert Authorization header value to str type");
+    let method_arn = event.payload.method_arn.expect("no method ARN in request object");
 
     let token_data: Result<jsonwebtoken::TokenData<Claims>, anyhow::Error> = jwt_service::validate_token(token, current_keys);
     let user_id = &token_data
+        .as_ref()
         .expect("invalid claims on TokenData object")
         .claims.cornercamemail;
     
-    let gym_id = event.payload.headers
-        .get("gym");
+    let gym_id = gym_id_from_headers(&event.payload.headers);
     let user_auths = fetch_auths_for_user(dynamo_client, &user_id).await;
-    match gym_id {
-        None => {
-            match user_auths {
-                Err(e) => {
-                    if auths.iter().count() == 0 {
-                        // select a gym page (user with no gyms)
-                    } else {
-                         // select a gym page (user with gyms)
-                    }
-                }
-                Ok(auths) => {
-                    if auths.iter().count() == 0 {
-                        // select a gym page (user with no gyms)
-                    }
-                    for auth in auths {
-                        if (auth.is_default && is_auth_valid(auth)) {
-                            // happy path for single gym auth
-                        }
-                    }
-                    // select a gym page (user with gyms)
-                }
+    match user_auths {
+        Err(e) => {
+            // determine if error is system error or just no auths found
+            // select a gym page (user with gyms)
+            error!("ERROR fetching auths: {}", e);
+            let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: not_allowed(
+                "AUTH_FETCH_ERROR".to_string(), 
+                vec![], 
+                vec![], 
+                "LOGIN".to_string(), 
+                "ERROR 108: System error while fetching authorization information".to_string())?;
+            return Ok(response);        }
+        Ok(auths) => {
+            if auths.iter().count() == 0 {
+                // select a gym page (user with no gyms)
+                let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: not_allowed(
+                    "NO_AUTHS_FOUND".to_string(), 
+                    auths, 
+                    vec![], 
+                    "SELECT_GYM".to_string(), 
+                    "".to_string())?;
+                return Ok(response);
             }
-        }
-        Some(gym_id) => {
-            match user_auths {
-                Err(e) => {
-
-                }
-                Ok(auths) => {
-                    
-                }
-            }
-            let user_auth = fetch_auth_for_user(dynamo_client, 
-                user_id, 
-                gym_id.to_str().expect("couldn't convert gym_id to str type"))
-                .await;
-            if let auth = user_auth.unwrap() {
-                if is_auth_valid(auth) {
+            let auths_iter = &auths;
+            for auth in auths_iter.iter().cloned() {
+                if gym_id == "0" && auth.is_default && is_auth_valid(&auth) {
                     // happy path for single gym auth
-                } else {
-                    // user owes money
+                    let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: prepare_response(
+                        token_data, 
+                        method_arn,
+                        response_from_auths(auths)
+                    )?;
+                    return Ok(response)
+                } else if auth_matches_gym(auth, gym_id) {
+                    // happy path for single gym auth
+                    let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: prepare_response(
+                        token_data, 
+                        method_arn,
+                        response_from_auths(auths)
+                    )?;
+                    return Ok(response)
                 }
             }
-            // no auth for this user and gym
-            // TODO: really query again? I don't think so... we should always get all auths
+            // select a gym page (user with gyms)
+            let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: not_allowed(
+                if gym_id == "0" { "NO_DEFAULT_GYM".to_string() } else { "NO_VALID_AUTH_FOR_GYM".to_string() }, 
+                auths, 
+                vec![], 
+                "SELECT_GYM".to_string(), 
+                "".to_string())?;
+            return Ok(response);
         }
     }
-
-    
-    let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: prepare_response(token_data)?;
-
-    return Ok(response)
 }
 
-fn is_auth_valid(gym_auth: GymAuth) -> bool {
+fn response_from_auths(auths: Vec<GymAuth>) -> AuthResponse {
+    AuthResponse {
+        auths: auths,
+        error: "".to_string(),
+        gyms: vec![],
+        next_page: "".to_string(),
+    }
+}
+
+// returns the &str value of the header "gym", or "0" if there is no parseable header
+fn gym_id_from_headers(headers: &aws_lambda_events::http::HeaderMap) -> &str {
+    let Some(gym_header) = headers.get("gym") else {
+        info!("no gym header received");
+        return "0"
+    };
+    return gym_header.to_str().unwrap_or({
+        error!("ERROR 152: received unparseable `gym` header");
+        "0"
+    });
+}
+
+fn is_auth_valid(gym_auth: &GymAuth) -> bool {
     let dt = format!("{}", Local::now().format("%Y-%m-%d"));
     gym_auth.access_expires >= dt 
+}
+
+fn auth_matches_gym(gym_auth: GymAuth, gym_id: &str) -> bool {
+    gym_auth.SK == format!("GYM#{gym_id}")
 }
 
 #[tokio::main]
@@ -159,6 +186,8 @@ async fn main() -> Result<(), Error> {
     let table_name = std::env::var("KEYS_TABLE_NAME").unwrap();
     
     let jwks_endpoint = std::env::var("JWKS_ENDPOINT").unwrap();
+
+    let cc_environment = std::env::var("ENVIRONMENT").unwrap();
 
     let dynamo_client = dynamo_service::get_dynamo_client().await;
 

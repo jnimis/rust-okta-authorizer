@@ -2,18 +2,52 @@ use aws_lambda_events::apigw::{
     ApiGatewayCustomAuthorizerPolicy, ApiGatewayCustomAuthorizerResponse, IamPolicyStatement,
 };
 
-use crate::{AuthResponse, Claims};
+use crate::{AuthResponse, Claims, GymAuth};
+
+pub fn not_allowed(
+    reason: String,
+    auths: Vec<GymAuth>,
+    gyms: Vec<u32>,
+    next_page: String,
+    error: String
+) -> anyhow::Result<ApiGatewayCustomAuthorizerResponse<AuthResponse>> {
+    println!("token validation failed with error: {:?}", e);
+
+    let path_to_deny =
+        format!("arn:aws:execute-api:us-east-1:765444088049:qma7pp9zmf/Prod/GET/hello/*",);
+
+    let statement = vec![IamPolicyStatement {
+        effect: Some("Deny".to_string()),
+        action: vec!["execute-api:Invoke".to_string()],
+        resource: vec![path_to_deny],
+    }];
+
+    let policy = ApiGatewayCustomAuthorizerPolicy {
+        version: Some("2012-10-17".to_string()),
+        statement,
+    };
+
+    let resp = ApiGatewayCustomAuthorizerResponse {
+        principal_id: Some("12345abc".to_string()),
+        policy_document: policy,
+        context: AuthResponse {
+            auths,
+            error,
+            gyms,
+            next_page,
+        },
+        usage_identifier_key: None,
+    };
+    return Ok(resp);
+}
 
 pub fn prepare_response(
     validated_token: anyhow::Result<jsonwebtoken::TokenData<Claims>>,
+    path_to_allow: String,
+    auth_response: AuthResponse
 ) -> anyhow::Result<ApiGatewayCustomAuthorizerResponse<AuthResponse>> {
     let policy = match validated_token {
-        Ok(token_data) => {
-            let path_to_allow = format!(
-                "arn:aws:execute-api:us-east-1:765444088049:qma7pp9zmf/Prod/GET/hello/{user_id}",
-                user_id = token_data.claims.uid
-            );
-
+        Ok(_token_data) => {
             let statement = vec![IamPolicyStatement {
                 effect: Some("Allow".to_string()),
                 action: vec!["execute-api:Invoke".to_string()],
@@ -28,13 +62,10 @@ pub fn prepare_response(
         Err(e) => {
             println!("token validation failed with error: {:?}", e);
 
-            let path_to_deny =
-                format!("arn:aws:execute-api:us-east-1:765444088049:qma7pp9zmf/Prod/GET/hello/*",);
-
             let statement = vec![IamPolicyStatement {
                 effect: Some("Deny".to_string()),
                 action: vec!["execute-api:Invoke".to_string()],
-                resource: vec![path_to_deny],
+                resource: vec![path_to_allow],
             }];
 
             ApiGatewayCustomAuthorizerPolicy {
@@ -47,12 +78,7 @@ pub fn prepare_response(
     let resp = ApiGatewayCustomAuthorizerResponse {
         principal_id: Some("12345abc".to_string()),
         policy_document: policy,
-        context: AuthResponse {
-            auths: vec![],
-            error: "".to_string(),
-            gyms: vec![],
-            next_page: "".to_string(),
-        },
+        context: auth_response,
         usage_identifier_key: None,
     };
     return Ok(resp);
