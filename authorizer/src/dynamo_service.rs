@@ -1,7 +1,6 @@
 use anyhow::Error;
 use anyhow::{anyhow, Context};
 use serde_dynamo::from_items;
-use chrono::Local;
 
 use super::GymAuth;
 use super::JWTKResponse;
@@ -86,34 +85,6 @@ pub(crate) async fn fetch_auths_for_user(
         Ok(auths)
     } else {
         Ok(vec![])
-    }
-}
-
-pub(crate) async fn fetch_auth_for_user(
-    dynamo_client: &aws_sdk_dynamodb::Client,
-    user_id: &String,
-    gym_id: &str
-) -> Result<GymAuth, Error> {
-    let pk = format!("USER#{user_id}");
-    let sk = format!("GYM#{gym_id}");
-    let results = dynamo_client
-        .query()
-        .table_name(TABLE_NAME)
-        .expression_attribute_values(":user_id", aws_sdk_dynamodb::types::AttributeValue::S(pk))
-        .expression_attribute_values(":gym_id", aws_sdk_dynamodb::types::AttributeValue::S(sk))
-        .key_condition_expression("PK = :user_id")
-        .key_condition_expression("SK = :gym_id")
-        .send()
-        .await.expect("ERROR when querying dynamoDB");
-
-    if let Some(items) = results.items {
-        let auths: Vec<GymAuth> = from_items(items).expect("ERROR decoding items into GymAuth objects");
-        if auths.iter().count() != 1 {
-            return Err(Error::msg("incorrect number of auths found for user and gym"));
-        }
-        Ok(auths.first().unwrap())
-    } else {
-        Err(Error::msg("unable to get gym auths from dynamodb"))
     }
 }
 

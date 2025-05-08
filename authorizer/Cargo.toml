@@ -1,5 +1,5 @@
 [package]
-name = "authorizer"
+name = "rust-authorizer"
 version = "0.1.0"
 edition = "2021"
 

@@ -4,7 +4,7 @@ use aws_lambda_events::apigw::{
 };
 
 use aws_sdk_dynamodb::Client;
-use dynamo_service::{fetch_auth_for_user, fetch_auths_for_user};
+use dynamo_service::fetch_auths_for_user;
 use lambda_runtime::{run, service_fn, Error, LambdaEvent};
 use std::collections::HashMap;
 
@@ -28,6 +28,7 @@ pub struct GymAuth {
     PK: String,
     SK: String,
     pub access_expires: String,
+    #[serde(default = "bool::default")]
     is_default: bool,
 }
 
@@ -91,7 +92,7 @@ async fn function_handler(
     let user_id = &token_data
         .as_ref()
         .expect("invalid claims on TokenData object")
-        .claims.cornercamemail;
+        .claims.cornercamemail.clone();
     
     let gym_id = gym_id_from_headers(&event.payload.headers);
     let user_auths = fetch_auths_for_user(dynamo_client, &user_id).await;
@@ -101,7 +102,9 @@ async fn function_handler(
             // select a gym page (user with gyms)
             error!("ERROR fetching auths: {}", e);
             let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: not_allowed(
-                "AUTH_FETCH_ERROR".to_string(), 
+                user_id,
+                "AUTH_FETCH_ERROR".to_string(),
+                method_arn,
                 vec![], 
                 vec![], 
                 "LOGIN".to_string(), 
@@ -111,7 +114,9 @@ async fn function_handler(
             if auths.iter().count() == 0 {
                 // select a gym page (user with no gyms)
                 let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: not_allowed(
+                    user_id,
                     "NO_AUTHS_FOUND".to_string(), 
+                    method_arn,
                     auths, 
                     vec![], 
                     "SELECT_GYM".to_string(), 
@@ -125,7 +130,8 @@ async fn function_handler(
                     let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: prepare_response(
                         token_data, 
                         method_arn,
-                        response_from_auths(auths)
+                        response_from_auths(auths),
+                        user_id
                     )?;
                     return Ok(response)
                 } else if auth_matches_gym(auth, gym_id) {
@@ -133,14 +139,17 @@ async fn function_handler(
                     let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: prepare_response(
                         token_data, 
                         method_arn,
-                        response_from_auths(auths)
+                        response_from_auths(auths),
+                        user_id
                     )?;
                     return Ok(response)
                 }
             }
             // select a gym page (user with gyms)
             let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: not_allowed(
+                user_id,
                 if gym_id == "0" { "NO_DEFAULT_GYM".to_string() } else { "NO_VALID_AUTH_FOR_GYM".to_string() }, 
+                method_arn,
                 auths, 
                 vec![], 
                 "SELECT_GYM".to_string(), 

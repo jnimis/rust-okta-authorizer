@@ -5,21 +5,20 @@ use aws_lambda_events::apigw::{
 use crate::{AuthResponse, Claims, GymAuth};
 
 pub fn not_allowed(
+    user: &String,
     reason: String,
+    path_to_allow: String,
     auths: Vec<GymAuth>,
     gyms: Vec<u32>,
     next_page: String,
     error: String
 ) -> anyhow::Result<ApiGatewayCustomAuthorizerResponse<AuthResponse>> {
-    println!("token validation failed with error: {:?}", e);
-
-    let path_to_deny =
-        format!("arn:aws:execute-api:us-east-1:765444088049:qma7pp9zmf/Prod/GET/hello/*",);
+    println!("token validation failed with error: {:?}", error);
 
     let statement = vec![IamPolicyStatement {
         effect: Some("Deny".to_string()),
         action: vec!["execute-api:Invoke".to_string()],
-        resource: vec![path_to_deny],
+        resource: vec![path_to_allow],
     }];
 
     let policy = ApiGatewayCustomAuthorizerPolicy {
@@ -28,7 +27,7 @@ pub fn not_allowed(
     };
 
     let resp = ApiGatewayCustomAuthorizerResponse {
-        principal_id: Some("12345abc".to_string()),
+        principal_id: Some(user.to_string()),
         policy_document: policy,
         context: AuthResponse {
             auths,
@@ -44,7 +43,8 @@ pub fn not_allowed(
 pub fn prepare_response(
     validated_token: anyhow::Result<jsonwebtoken::TokenData<Claims>>,
     path_to_allow: String,
-    auth_response: AuthResponse
+    auth_response: AuthResponse,
+    user: &String
 ) -> anyhow::Result<ApiGatewayCustomAuthorizerResponse<AuthResponse>> {
     let policy = match validated_token {
         Ok(_token_data) => {
@@ -76,7 +76,7 @@ pub fn prepare_response(
     };
     // Prepare the response
     let resp = ApiGatewayCustomAuthorizerResponse {
-        principal_id: Some("12345abc".to_string()),
+        principal_id: Some(user.to_string()),
         policy_document: policy,
         context: auth_response,
         usage_identifier_key: None,
