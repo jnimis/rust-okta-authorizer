@@ -212,7 +212,7 @@ async fn main() -> Result<(), Error> {
             jwtk_response_to_map(keys_dynamo)
         }
         Err(_) => {
-            error!("no keys in dynamo - getting them from okta and storing in  dynamo");
+            error!("no keys in dynamo - getting them from auth0 and storing in dynamo");
             let keys_resp = get_keys_from_jwks_endpoint(jwks_endpoint).await.unwrap();
             // ignoring result of putting record to dynamo
             let _ =
