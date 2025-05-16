@@ -65,13 +65,11 @@ pub struct StoredKeys {
 
 #[derive(Deserialize, Serialize)]
 pub struct Claims {
-    aud: String, // Optional. Audience
+    aud: Vec<String>, // Optional. Audience
     exp: usize, // Required (validate_exp defaults to true in validation). Expiration time (as UTC timestamp)
     iat: usize, // Optional. Issued at (as UTC timestamp)
     iss: String, // Optional. Issuer
-    uid: String,
     sub: String,      // Optional. Subject (whom token refers to)
-    scp: Vec<String>, // Optional. Scopes (permissions)>
     cornercamemail: String, // specific to CornerCam implementation
 }
 
@@ -93,8 +91,11 @@ async fn function_handler(
         .as_ref()
         .expect("invalid claims on TokenData object")
         .claims.cornercamemail.clone();
+    info!("user: {}", user_id);
     
     let gym_id = gym_id_from_headers(&event.payload.headers);
+    info!("gym_id: {}", gym_id);
+
     let user_auths = fetch_auths_for_user(dynamo_client, &user_id).await;
     match user_auths {
         Err(e) => {
@@ -111,6 +112,7 @@ async fn function_handler(
                 "ERROR 108: System error while fetching authorization information".to_string())?;
             return Ok(response);        }
         Ok(auths) => {
+            info!("num auths: {}", auths.iter().count());
             if auths.iter().count() == 0 {
                 // select a gym page (user with no gyms)
                 let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: not_allowed(

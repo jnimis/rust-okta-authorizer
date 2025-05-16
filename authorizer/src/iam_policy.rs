@@ -1,6 +1,7 @@
 use aws_lambda_events::apigw::{
     ApiGatewayCustomAuthorizerPolicy, ApiGatewayCustomAuthorizerResponse, IamPolicyStatement,
 };
+use tracing::{info, error};
 
 use crate::{AuthResponse, Claims, GymAuth};
 
@@ -14,6 +15,7 @@ pub fn not_allowed(
     error: String
 ) -> anyhow::Result<ApiGatewayCustomAuthorizerResponse<AuthResponse>> {
     println!("token validation failed with error: {:?}", error);
+    info!("denied for reason: {}", reason);
 
     let statement = vec![IamPolicyStatement {
         effect: Some("Deny".to_string()),
