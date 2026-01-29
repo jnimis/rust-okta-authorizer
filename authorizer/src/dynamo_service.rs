@@ -4,8 +4,18 @@ use serde_dynamo::from_items;
 
 use super::GymAuth;
 use super::JWTKResponse;
+use std::env;
 
 const TABLE_NAME: &'static str = "CCUserService";
+
+pub fn user_service_table_name() -> String {
+    let key = "USER_SERVICE_TABLE_NAME";
+
+    match env::var(key) {
+        Ok(val) => return val,
+        Err(e) => panic!("Can't find user service table name from env var with key {}", key)
+    }
+}
 
 pub async fn get_dynamo_client() -> aws_sdk_dynamodb::Client {
     let region_provider =
@@ -73,7 +83,7 @@ pub(crate) async fn fetch_auths_for_user(
     let sk = format!("GYM#");
     let results = dynamo_client
         .query()
-        .table_name(TABLE_NAME)
+        .table_name(user_service_table_name())
         .expression_attribute_values(":user_id", aws_sdk_dynamodb::types::AttributeValue::S(pk))
         .expression_attribute_values(":gym_id", aws_sdk_dynamodb::types::AttributeValue::S(sk))
         .key_condition_expression("PK = :user_id AND begins_with ( SK, :gym_id )")
