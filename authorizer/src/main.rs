@@ -1,6 +1,6 @@
 use aws_lambda_events::apigw::{
     ApiGatewayCustomAuthorizerRequestTypeRequest,
-    ApiGatewayCustomAuthorizerResponse, ApiGatewayV2CustomAuthorizerSimpleResponse
+    ApiGatewayCustomAuthorizerResponse
 };
 
 use aws_sdk_dynamodb::Client;
@@ -9,8 +9,10 @@ use lambda_runtime::{run, service_fn, Error, LambdaEvent};
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use tracing::{info, error};
+use tracing::{debug, info, error};
 use chrono::Local;
+
+use crate::iam_policy::formatted_auth_response;
 
 mod dynamo_service;
 mod jwt_service;
@@ -24,6 +26,7 @@ enum AuthPages {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[allow(non_snake_case)]
 pub struct GymAuth {
     PK: String,
     SK: String,
@@ -34,8 +37,8 @@ pub struct GymAuth {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AuthResponse {
-    auths: Vec<GymAuth>,
-    gyms: Vec<u32>,
+    auths: String, // Vec<GymAuth>
+    gyms: String, // Vec<u32>
     next_page: String,
     error: String,
 }
@@ -63,13 +66,15 @@ pub struct StoredKeys {
     keys: HashMap<String, JWTK>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Claims {
     aud: Vec<String>, // Optional. Audience
     exp: usize, // Required (validate_exp defaults to true in validation). Expiration time (as UTC timestamp)
     iat: usize, // Optional. Issued at (as UTC timestamp)
     iss: String, // Optional. Issuer
     sub: String,      // Optional. Subject (whom token refers to)
+    scope: String,
+    azp: String,
     cornercamemail: String, // specific to CornerCam implementation
 }
 
@@ -79,14 +84,21 @@ async fn function_handler(
     event: LambdaEvent<ApiGatewayCustomAuthorizerRequestTypeRequest>,
 ) -> Result<ApiGatewayCustomAuthorizerResponse<AuthResponse>, Error> {
 
+    debug!("headers: {:?}", event.payload.headers);
+
     let token  = event.payload.headers
         .get("Authorization")
         .expect("couldn't get Authorization header from request")
         .to_str()
         .expect("couldn't convert Authorization header value to str type");
+    let clean_token = token
+        .strip_prefix("Bearer ")
+        .unwrap_or(token);
     let method_arn = event.payload.method_arn.expect("no method ARN in request object");
 
-    let token_data: Result<jsonwebtoken::TokenData<Claims>, anyhow::Error> = jwt_service::validate_token(token, current_keys);
+    debug!("clean token: {}", clean_token);
+    let token_data: Result<jsonwebtoken::TokenData<Claims>, anyhow::Error> = jwt_service::validate_token(clean_token, current_keys);
+
     let user_id = &token_data
         .as_ref()
         .expect("invalid claims on TokenData object")
@@ -162,12 +174,12 @@ async fn function_handler(
 }
 
 fn response_from_auths(auths: Vec<GymAuth>) -> AuthResponse {
-    AuthResponse {
-        auths: auths,
-        error: "".to_string(),
-        gyms: vec![],
-        next_page: "".to_string(),
-    }
+    formatted_auth_response(
+        auths,
+        vec![],
+        "".to_string(),
+        "".to_string()
+    )
 }
 
 // returns the &str value of the header "gym", or "0" if there is no parseable header
@@ -176,10 +188,13 @@ fn gym_id_from_headers(headers: &aws_lambda_events::http::HeaderMap) -> &str {
         info!("no gym header received");
         return "0"
     };
-    return gym_header.to_str().unwrap_or({
-        error!("ERROR 152: received unparseable `gym` header");
+    let gym_id = gym_header.to_str().unwrap_or({
         "0"
     });
+    if gym_id == "0" {
+        error!("ERROR 152: received unparseable `gym` header");
+    }
+    return gym_id;
 }
 
 fn is_auth_valid(gym_auth: &GymAuth) -> bool {
@@ -223,12 +238,18 @@ async fn main() -> Result<(), Error> {
         }
     };
 
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        // disable printing the name of the module in every log line.
-        .with_target(false)
-        // disabling time is handy because CloudWatch will add the ingestion time.
-        .without_time()
+    let log_level_string = std::env::var("LOG_LEVEL").unwrap_or("ERROR".to_string());
+    let log_level = match log_level_string.as_str() {
+        "DEBUG" => tracing::Level::DEBUG,
+        "INFO" => tracing::Level::INFO,
+        _ => tracing::Level::ERROR
+    };
+
+    tracing_subscriber::fmt() // .json()
+        .with_max_level(log_level)
+        .with_target(false)         // disable printing the name of the module in every log line.
+        // .with_current_span(false)   // only available w JSON logs
+        .with_ansi(false)           // don't include colors
         .init();
 
     // run(service_fn(function_handler)).await

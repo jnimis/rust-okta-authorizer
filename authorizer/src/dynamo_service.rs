@@ -6,14 +6,12 @@ use super::GymAuth;
 use super::JWTKResponse;
 use std::env;
 
-const TABLE_NAME: &'static str = "CCUserService";
-
 pub fn user_service_table_name() -> String {
     let key = "USER_SERVICE_TABLE_NAME";
 
     match env::var(key) {
         Ok(val) => return val,
-        Err(e) => panic!("Can't find user service table name from env var with key {}", key)
+        Err(e) => panic!("Can't find user service table name from env var with key {}: {}", key, e)
     }
 }
 

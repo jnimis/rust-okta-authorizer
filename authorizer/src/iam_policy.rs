@@ -14,7 +14,6 @@ pub fn not_allowed(
     next_page: String,
     error: String
 ) -> anyhow::Result<ApiGatewayCustomAuthorizerResponse<AuthResponse>> {
-    println!("token validation failed with error: {:?}", error);
     info!("denied for reason: {}", reason);
 
     let statement = vec![IamPolicyStatement {
@@ -31,15 +30,37 @@ pub fn not_allowed(
     let resp = ApiGatewayCustomAuthorizerResponse {
         principal_id: Some(user.to_string()),
         policy_document: policy,
-        context: AuthResponse {
+        context: formatted_auth_response(
             auths,
-            error,
             gyms,
-            next_page,
-        },
+            next_page,            
+            error,
+        ),
         usage_identifier_key: None,
     };
     return Ok(resp);
+}
+
+pub fn formatted_auth_response(
+    auths: Vec<GymAuth>,
+    gyms: Vec<u32>,
+    next_page: String,
+    error: String,
+) -> AuthResponse {
+
+    // convert arrays to strings, because the API Gateway API doesn't allow nested objects inside context
+    let auths_string = serde_json::to_string(&auths).unwrap_or("ERROR".to_string());
+    let gyms_string = serde_json::to_string(&gyms).unwrap_or("ERROR".to_string());
+    if auths_string == "ERROR" || gyms_string == "ERROR" {
+        error!("error encoding auths or gyms for authorizer response context");
+    };  
+
+    AuthResponse {
+        auths: auths_string,
+        error,
+        gyms: gyms_string,
+        next_page,
+    }
 }
 
 pub fn prepare_response(
