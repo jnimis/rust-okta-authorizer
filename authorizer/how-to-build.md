@@ -3,7 +3,7 @@
 `cargo lambda build --release --arm64`
 
 ### deploy:
-`cargo lambda deploy rust-authorizer`
+DEV: `cargo lambda deploy --binary-name rust-authorizer dev-cc-authorizer`
 
 
 
