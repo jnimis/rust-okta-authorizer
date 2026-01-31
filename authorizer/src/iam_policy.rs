@@ -31,7 +31,7 @@ pub fn not_allowed(
         principal_id: Some(user.to_string()),
         policy_document: policy,
         context: formatted_auth_response(
-            auths,
+            &auths,
             gyms,
             next_page,            
             error,
@@ -42,18 +42,26 @@ pub fn not_allowed(
 }
 
 pub fn formatted_auth_response(
-    auths: Vec<GymAuth>,
+    auths: &Vec<GymAuth>,
     gyms: Vec<u32>,
     next_page: String,
     error: String,
 ) -> AuthResponse {
 
     // convert arrays to strings, because the API Gateway API doesn't allow nested objects inside context
-    let auths_string = serde_json::to_string(&auths).unwrap_or("ERROR".to_string());
-    let gyms_string = serde_json::to_string(&gyms).unwrap_or("ERROR".to_string());
-    if auths_string == "ERROR" || gyms_string == "ERROR" {
-        error!("error encoding auths or gyms for authorizer response context");
-    };  
+    // let auths_string = serde_json::to_string(&auths).unwrap_or("ERROR".to_string());
+    // let gyms_string = serde_json::to_string(&gyms).unwrap_or("ERROR".to_string());
+    let auths_string = auths.iter()
+        .map(|auth| format!("{}|{}|{}|{}", auth.PK, auth.SK, auth.access_expires, auth.is_default))
+        .collect();
+    let gyms_string = gyms.iter()
+        .map(|&num| num.to_string()) 
+        .collect::<Vec<String>>()   
+        .join("|");
+
+    // if auths_string == "ERROR" || gyms_string == "ERROR" {
+    //     error!("error encoding auths or gyms for authorizer response context");
+    // };  
 
     AuthResponse {
         auths: auths_string,

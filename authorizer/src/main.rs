@@ -175,7 +175,7 @@ async fn function_handler(
 
 fn response_from_auths(auths: Vec<GymAuth>) -> AuthResponse {
     formatted_auth_response(
-        auths,
+        &auths,
         vec![],
         "".to_string(),
         "".to_string()
