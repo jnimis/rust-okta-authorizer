@@ -139,8 +139,10 @@ async fn function_handler(
             }
             let auths_iter = &auths;
             for auth in auths_iter.iter().cloned() {
-                if gym_id == "0" && auth.is_default && is_auth_valid(&auth) {
+                let is_valid_auth = is_auth_valid(&auth);
+                if gym_id == "0" && auth.is_default && is_valid_auth {
                     // happy path for single gym auth
+                    info!("default gym success");
                     let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: prepare_response(
                         token_data, 
                         method_arn,
@@ -148,8 +150,9 @@ async fn function_handler(
                         user_id
                     )?;
                     return Ok(response)
-                } else if auth_matches_gym(auth, gym_id) {
+                } else if auth_matches_gym(auth, gym_id) && is_valid_auth {
                     // happy path for single gym auth
+                    info!("specific gym success");
                     let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: prepare_response(
                         token_data, 
                         method_arn,
@@ -199,6 +202,7 @@ fn gym_id_from_headers(headers: &aws_lambda_events::http::HeaderMap) -> &str {
 
 fn is_auth_valid(gym_auth: &GymAuth) -> bool {
     let dt = format!("{}", Local::now().format("%Y-%m-%d"));
+    info!("today: {}; access_expires: {}", dt, gym_auth.access_expires);
     gym_auth.access_expires >= dt 
 }
 
