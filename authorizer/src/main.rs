@@ -119,7 +119,6 @@ async fn function_handler(
                 "AUTH_FETCH_ERROR".to_string(),
                 method_arn,
                 vec![], 
-                vec![], 
                 "LOGIN".to_string(), 
                 "ERROR 108: System error while fetching authorization information".to_string())?;
             return Ok(response);        }
@@ -132,7 +131,6 @@ async fn function_handler(
                     "NO_AUTHS_FOUND".to_string(), 
                     method_arn,
                     auths, 
-                    vec![], 
                     "SELECT_GYM".to_string(), 
                     "".to_string())?;
                 return Ok(response);
@@ -168,7 +166,6 @@ async fn function_handler(
                 if gym_id == "0" { "NO_DEFAULT_GYM".to_string() } else { "NO_VALID_AUTH_FOR_GYM".to_string() }, 
                 method_arn,
                 auths, 
-                vec![], 
                 "SELECT_GYM".to_string(), 
                 "".to_string())?;
             return Ok(response);
@@ -179,7 +176,6 @@ async fn function_handler(
 fn response_from_auths(auths: Vec<GymAuth>) -> AuthResponse {
     formatted_auth_response(
         &auths,
-        vec![],
         "".to_string(),
         "".to_string()
     )
