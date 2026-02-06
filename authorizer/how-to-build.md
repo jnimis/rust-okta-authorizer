@@ -4,6 +4,6 @@
 
 ### deploy:
 DEV: `cargo lambda deploy --binary-name rust-authorizer dev-cc-authorizer`
-
+PROD: `cargo lambda deploy --binary-name rust-authorizer cc-authorizer`
 
 
