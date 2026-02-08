@@ -85,6 +85,7 @@ async fn function_handler(
 ) -> Result<ApiGatewayCustomAuthorizerResponse<AuthResponse>, Error> {
 
     debug!("headers: {:?}", event.payload.headers);
+    let forced_error = std::env::var("FORCE_ERROR").expect("missing env var FORCE_ERROR");
 
     let token  = event.payload.headers
         .get("Authorization")
@@ -107,6 +108,17 @@ async fn function_handler(
     
     let gym_id = gym_id_from_headers(&event.payload.headers);
     info!("gym_id: {}", gym_id);
+
+    if forced_error != "NONE" {
+        let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: not_allowed(
+            user_id,
+            "FORCED_ERROR".to_string(), 
+            method_arn,
+            vec![], 
+            forced_error, 
+            "".to_string())?;
+        return Ok(response);
+    }
 
     let user_auths = fetch_auths_for_user(dynamo_client, &user_id).await;
     match user_auths {
