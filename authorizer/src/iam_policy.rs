@@ -1,7 +1,7 @@
 use aws_lambda_events::apigw::{
     ApiGatewayCustomAuthorizerPolicy, ApiGatewayCustomAuthorizerResponse, IamPolicyStatement,
 };
-use tracing::{info};
+use tracing::{info, debug};
 
 use crate::{AuthResponse, Claims, GymAuth};
 
@@ -20,11 +20,13 @@ pub fn not_allowed(
         action: vec!["execute-api:Invoke".to_string()],
         resource: vec![path_to_allow],
     }];
+    debug!("statement: {:?}", statement);
 
     let policy = ApiGatewayCustomAuthorizerPolicy {
         version: Some("2012-10-17".to_string()),
         statement,
     };
+    debug!("policy: {:?}", policy);
 
     let resp = ApiGatewayCustomAuthorizerResponse {
         principal_id: Some(user.to_string()),
@@ -36,6 +38,8 @@ pub fn not_allowed(
         ),
         usage_identifier_key: None,
     };
+    debug!("resp: {:?}", resp);
+
     return Ok(resp);
 }
 
@@ -53,6 +57,8 @@ pub fn formatted_auth_response(
         .flatten()
         .collect::<Vec<&str>>()
         .join("|");
+    debug!("auths_string: {:?}", auths_string);
+    debug!("gyms_string: {:?}", gyms_string);
 
     AuthResponse {
         auths: auths_string,

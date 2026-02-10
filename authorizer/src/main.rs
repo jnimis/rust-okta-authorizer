@@ -110,13 +110,14 @@ async fn function_handler(
     info!("gym_id: {}", gym_id);
 
     if forced_error != "NONE" {
+        let message = error_message_for_forced_error(&forced_error).to_string();
         let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: not_allowed(
             user_id,
             "FORCED_ERROR".to_string(), 
             method_arn,
             vec![], 
             forced_error, 
-            "".to_string())?;
+            message)?;
         return Ok(response);
     }
 
@@ -182,6 +183,13 @@ async fn function_handler(
                 "".to_string())?;
             return Ok(response);
         }
+    }
+}
+
+fn error_message_for_forced_error(forced_error: &String) -> &str {
+    match forced_error.as_str() {
+        "SELECT_GYM" => "Artificial error to redirect to select gym page",
+        _ => "Artificial error"
     }
 }
 
