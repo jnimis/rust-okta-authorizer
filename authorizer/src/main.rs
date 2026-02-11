@@ -145,7 +145,7 @@ async fn function_handler(
                     method_arn,
                     auths, 
                     "SELECT_GYM".to_string(), 
-                    "".to_string())?;
+                    "This user hasn't been approved for any gyms yet".to_string())?;
                 return Ok(response);
             }
             let auths_iter = &auths;
@@ -174,13 +174,21 @@ async fn function_handler(
                 }
             }
             // select a gym page (user with gyms)
+            let mut reason = "";
+            let mut error_message = "";
+            if gym_id == "0" { 
+                reason = "NO_DEFAULT_GYM";
+            } else {
+                reason = "NO_VALID_AUTH_FOR_GYM";
+                error_message = "You aren't authorized to access the selected gym";
+            }
             let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: not_allowed(
                 user_id,
-                if gym_id == "0" { "NO_DEFAULT_GYM".to_string() } else { "NO_VALID_AUTH_FOR_GYM".to_string() }, 
+                reason.to_string(), 
                 method_arn,
                 auths, 
                 "SELECT_GYM".to_string(), 
-                "".to_string())?;
+                error_message.to_string())?;
             return Ok(response);
         }
     }
