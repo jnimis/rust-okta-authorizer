@@ -13,6 +13,7 @@ use tracing::{debug, info, error};
 use chrono::Local;
 
 use crate::iam_policy::formatted_auth_response;
+use cornercam_shared::user_service::GymAuth;
 
 mod dynamo_service;
 mod jwt_service;
@@ -23,16 +24,6 @@ enum AuthPages {
     SelectAGym,
     NeedAuthorization,
     Payment,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[allow(non_snake_case)]
-pub struct GymAuth {
-    PK: String,
-    SK: String,
-    pub access_expires: String,
-    #[serde(default = "bool::default")]
-    is_default: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
