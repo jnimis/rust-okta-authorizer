@@ -2,8 +2,9 @@ use aws_lambda_events::apigw::{
     ApiGatewayCustomAuthorizerPolicy, ApiGatewayCustomAuthorizerResponse, IamPolicyStatement,
 };
 use tracing::{info, debug};
+use cornercam_shared::user_service::GymAuth;
 
-use crate::{AuthResponse, Claims, GymAuth};
+use crate::{AuthResponse, Claims};
 
 pub fn not_allowed(
     user: &String,
@@ -52,7 +53,7 @@ pub fn formatted_auth_response(
     // convert arrays to strings, because the API Gateway API doesn't allow nested objects inside context
     let auths_string = auths.iter()
         .map(|auth| format!("{}|{}|{}|{}", auth.PK, auth.SK, auth.access_expires, auth.is_default))
-        .collect()
+        .collect::<Vec<String>>()
         .join(",");
     let gyms_string = auths.iter().map(|auth| auth.SK.strip_prefix("GYM#"))
         .flatten()

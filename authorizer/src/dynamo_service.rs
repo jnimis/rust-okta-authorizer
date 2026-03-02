@@ -2,7 +2,7 @@ use anyhow::Error;
 use anyhow::{anyhow, Context};
 use serde_dynamo::from_items;
 
-use super::GymAuth;
+use cornercam_shared::user_service::GymAuth;
 use super::JWTKResponse;
 use std::env;
 
