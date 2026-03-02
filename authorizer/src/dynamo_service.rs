@@ -108,7 +108,7 @@ mod tests {
             .await
             .expect("unable to get response from dynamo");
         assert!(john_auth.iter().count() == 1);
-        assert!(john_auth[0].access_expires == "2025-10-19");
+        assert!(john_auth[0].access_expires.as_option() == Some("2025-10-19"));
     }
 
     // #[tokio::test]

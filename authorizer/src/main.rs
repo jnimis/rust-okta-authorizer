@@ -217,8 +217,12 @@ fn gym_id_from_headers(headers: &aws_lambda_events::http::HeaderMap) -> &str {
 
 fn is_auth_valid(gym_auth: &GymAuth) -> bool {
     let dt = format!("{}", Local::now().format("%Y-%m-%d"));
-    info!("today: {}; access_expires: {}", dt, gym_auth.access_expires);
-    gym_auth.access_expires >= dt 
+    let Some(access_date) = gym_auth.access_expires.as_option() else {
+        debug!("no access date, which means the auth hasn't been approved by the gym");
+        return false;
+    };
+    debug!("today: {}; access_expires: {}", dt, access_date);
+    *access_date >= *dt
 }
 
 fn auth_matches_gym(gym_auth: GymAuth, gym_id: &str) -> bool {
