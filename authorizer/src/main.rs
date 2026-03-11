@@ -96,7 +96,7 @@ async fn function_handler(
         .expect("invalid claims on TokenData object")
         .claims.cornercamemail.clone();
     info!("user: {}", user_id);
-    
+
     let gym_id = gym_id_from_headers(&event.payload.headers);
     info!("gym_id: {}", gym_id);
 
@@ -112,6 +112,42 @@ async fn function_handler(
         return Ok(response);
     }
 
+    let route_key = method_arn.rsplit('/').next().unwrap_or("");
+    debug!("route key: {}", route_key);
+
+    match route_key {
+        "gyms" => {
+            let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: prepare_response(
+                token_data, 
+                method_arn,
+                response_from_auths(vec![]),
+                user_id
+            )?;
+            return Ok(response)
+        }
+        "auth-request" => {
+            // authentication is enough to be authorized for this route
+            let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: prepare_response(
+                token_data, 
+                method_arn,
+                response_from_auths(vec![]),
+                user_id
+            )?;
+            return Ok(response)
+        }
+        _ => {
+            // for all other routes, authorize the request
+            Ok(authorize_request(dynamo_client, user_id, gym_id, method_arn, token_data).await?)
+        }
+    }
+}
+
+async fn authorize_request(dynamo_client: &Client, 
+        user_id: &String, 
+        gym_id: &str, 
+        method_arn: String, 
+        token_data: Result<jsonwebtoken::TokenData<Claims>, anyhow::Error>) 
+            -> Result<ApiGatewayCustomAuthorizerResponse<AuthResponse>, Error> {
     let user_auths = fetch_auths_for_user(dynamo_client, &user_id).await;
     match user_auths {
         Err(e) => {
