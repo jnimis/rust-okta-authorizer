@@ -76,7 +76,7 @@ async fn function_handler(
 ) -> Result<ApiGatewayCustomAuthorizerResponse<AuthResponse>, Error> {
 
     debug!("headers: {:?}", event.payload.headers);
-    let forced_error = std::env::var("FORCE_ERROR").expect("missing env var FORCE_ERROR");
+    let forced_error = std::env::var("FORCE_ERROR").unwrap_or_else(|_| "NONE".to_string());
 
     let token  = event.payload.headers
         .get("Authorization")
