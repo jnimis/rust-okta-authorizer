@@ -97,9 +97,6 @@ async fn function_handler(
         .claims.cornercamemail.clone();
     info!("user: {}", user_id);
 
-    let gym_id = gym_id_from_headers(&event.payload.headers);
-    info!("gym_id: {}", gym_id);
-
     if forced_error != "NONE" {
         let message = error_message_for_forced_error(&forced_error).to_string();
         let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: not_allowed(
@@ -137,6 +134,9 @@ async fn function_handler(
         }
         _ => {
             // for all other routes, authorize the request
+            let gym_id = gym_id_from_headers(&event.payload.headers);
+            info!("gym_id: {}", gym_id);
+                
             Ok(authorize_request(dynamo_client, user_id, gym_id, method_arn, token_data).await?)
         }
     }
