@@ -89,7 +89,8 @@ pub(crate) async fn fetch_auths_for_user(
         .await.expect("ERROR when querying dynamoDB");
 
     if let Some(items) = results.items {
-        let auths = from_items(items).expect("ERROR decoding items into GymAuth objects");
+        let auths = items.iter().map(|item| GymAuth::try_from_dynamo_item(item)
+            .expect("ERROR decoding items into GymAuth objects")).collect();
         Ok(auths)
     } else {
         Ok(vec![])
