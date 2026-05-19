@@ -52,10 +52,10 @@ pub fn formatted_auth_response(
 
     // convert arrays to strings, because the API Gateway API doesn't allow nested objects inside context
     let auths_string = auths.iter()
-        .map(|auth| format!("{}|{}|{}|{}", auth.PK, auth.SK, auth.access_expires, auth.is_default))
+        .map(|auth| format!("{}|{}|{}|{}", auth.user_id, auth.gym_id, auth.access_expires, auth.is_default))
         .collect::<Vec<String>>()
         .join(",");
-    let gyms_string = auths.iter().map(|auth| auth.SK.strip_prefix("GYM#"))
+    let gyms_string = auths.iter().map(|auth| auth.gym_id.strip_prefix("GYM#"))
         .flatten()
         .collect::<Vec<&str>>()
         .join("|");

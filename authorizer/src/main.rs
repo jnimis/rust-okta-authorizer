@@ -262,7 +262,7 @@ fn is_auth_valid(gym_auth: &GymAuth) -> bool {
 }
 
 fn auth_matches_gym(gym_auth: GymAuth, gym_id: &str) -> bool {
-    gym_auth.SK == format!("GYM#{gym_id}")
+    gym_auth.gym_id == format!("GYM#{gym_id}")
 }
 
 #[tokio::main]
