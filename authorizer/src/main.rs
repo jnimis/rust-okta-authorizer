@@ -114,10 +114,11 @@ async fn function_handler(
 
     match route_key {
         "gyms" => {
+            let auths = fetch_auths_for_user(dynamo_client, &user_id).await.unwrap_or(vec![]);
             let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: prepare_response(
                 token_data, 
                 method_arn,
-                response_from_auths(vec![]),
+                response_from_auths(auths),
                 user_id
             )?;
             return Ok(response)
