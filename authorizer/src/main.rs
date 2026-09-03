@@ -254,7 +254,7 @@ fn gym_id_from_headers(headers: &aws_lambda_events::http::HeaderMap) -> &str {
 }
 
 fn is_auth_valid(gym_auth: &GymAuth, is_admin_path: bool) -> bool {
-    let dt = format!("{}", Local::now().format("%Y-%m-%d"));
+    let dt = today();
     if is_admin_path && !(gym_auth.role == "ADMIN" || gym_auth.role == "SUPER_ADMIN") {
         return false;
     }
@@ -341,22 +341,116 @@ async fn get_keys_from_jwks_endpoint(endpoint: String) -> anyhow::Result<JWTKRes
     Ok(result)
 }
 
+fn today() -> String {
+    Local::now().format("%Y-%m-%d").to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aws_lambda_events::http::{HeaderMap, HeaderValue};
+    use chrono::Duration;
+    use cornercam_shared::user_service::AccessExpires;
 
-    #[tokio::test]
-    async fn test_get_keys_from_endpoint() {
-        let endpoint = String::from("https://onemanband.auth0.com/.well-known/jwks.json");
-        let keys = get_keys_from_jwks_endpoint(endpoint)
-            .await.expect("error getting keys from endpoint");
-        let map = jwtk_response_to_map(keys);
-        assert_eq!(map.keys.get("NUQzQUMwOThGQjlFNDRFNEZDQTA2NzkzOTA0MzFFMThEQUFGRjhGQg").unwrap().alg, "RS256")
+    fn date_offset_from_today(days: i64) -> String {
+        (Local::now() + Duration::days(days))
+            .format("%Y-%m-%d")
+            .to_string()
     }
 
-    // #[tokio::test]
-    // async fn test_load_data() {
-    //     let data = load_test_data();
-    //     assert_eq!(data, "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ik5VUXpRVU13T1RoR1FqbEZORFJGTkVaRFFUQTJOemt6T1RBME16RkZNVGhFUVVGR1JqaEdRZyJ9.eyJjb3JuZXJjYW1lbWFpbCI6ImpvaG4ubmltaXNAZ21haWwuY29tIiwiaXNzIjoiaHR0cHM6Ly9vbmVtYW5iYW5kLmF1dGgwLmNvbS8iLCJzdWIiOiJnb29nbGUtb2F1dGgyfDEwNjY0NzM1NDk5NjcwMTMwNjIzMSIsImF1ZCI6WyJodHRwczovL2Nvcm5lcmNhbS5uZXQiLCJodHRwczovL29uZW1hbmJhbmQuYXV0aDAuY29tL3VzZXJpbmZvIl0sImlhdCI6MTc0MTU3NzMwNiwiZXhwIjoxNzQxNjYzNzA2LCJzY29wZSI6Im9wZW5pZCIsImF6cCI6InNlTk5aNzMybTh5TnFWZHRtdXdxRlV0QzZObHZMeUV3In0.pu9sJWdgWW9iWPFKp0vhIAAJb8jIlrgAzZxsIiKyjaaLFhqnfS4Ot4uac52tXY2hJfXkIVoKxUIDMZ4kXdz0z_aApY4PzZaCVsluVZKsj_9k1OCADr6MAsr50gE-8LJhtQrlm8T2cNjepmpFZNrXGKhOe38ZzfbO-sSaPq4PT2ZN5686l6Pe2CWFw3mHxYlInGN79MtSzdeXBNUWCZX-lhMHcVeRXVJnRfVu0Ab8JB4hKdLNhHtaKw35u35gkZ3ZPMe64AviyrOiSVgrsdWmVVw22T-Xoz8ZmP1oTAdBi0_mh2tbRuMftVWLxZEyEUVXcXZ0zE9ocSTkiKfiTOyuBg");
-    // }
+    fn sample_auth(role: &str, access_expires: Option<&str>) -> GymAuth {
+        GymAuth {
+            user_id: "user@example.com".to_string(),
+            gym_id: "GYM#42".to_string(),
+            role: role.to_string(),
+            access_expires: AccessExpires(access_expires.map(str::to_string)),
+            is_default: false,
+        }
+    }
+
+    #[test]
+    fn is_auth_valid_accepts_future_and_today_expiry() {
+        let future = sample_auth("USER", Some(&date_offset_from_today(30)));
+        let expires_today = sample_auth("USER", Some(&today()));
+
+        assert!(is_auth_valid(&future, false));
+        assert!(is_auth_valid(&expires_today, false));
+    }
+
+    #[test]
+    fn is_auth_valid_rejects_past_expiry() {
+        let expired = sample_auth("USER", Some(&date_offset_from_today(-1)));
+        assert!(!is_auth_valid(&expired, false));
+    }
+
+    #[test]
+    fn is_auth_valid_rejects_missing_access_expires() {
+        let unapproved = sample_auth("USER", None);
+        assert!(!is_auth_valid(&unapproved, false));
+    }
+
+    #[test]
+    fn is_auth_valid_admin_path_requires_admin_role() {
+        let expires = date_offset_from_today(30);
+        let user = sample_auth("USER", Some(&expires));
+        let other_strange_role = sample_auth("OTHER_STRANGE_ROLE", Some(&expires));
+        let admin = sample_auth("ADMIN", Some(&expires));
+        let super_admin = sample_auth("SUPER_ADMIN", Some(&expires));
+
+        assert!(!is_auth_valid(&user, true));
+        assert!(is_auth_valid(&admin, true));
+        assert!(is_auth_valid(&super_admin, true));
+        assert!(!is_auth_valid(&other_strange_role, true));
+    }
+
+    #[test]
+    fn is_auth_valid_non_admin_path_allows_user_role() {
+        let user = sample_auth("USER", Some(&date_offset_from_today(30)));
+        assert!(is_auth_valid(&user, false));
+    }
+
+    #[test]
+    fn is_auth_valid_admin_role_still_needs_valid_expiry() {
+        let expired_admin = sample_auth("ADMIN", Some(&date_offset_from_today(-1)));
+        let unapproved_admin = sample_auth("SUPER_ADMIN", None);
+
+        assert!(!is_auth_valid(&expired_admin, true));
+        assert!(!is_auth_valid(&unapproved_admin, true));
+    }
+
+    #[test]
+    fn is_admin_path_detects_admin_substring() {
+        assert!(is_admin_path(
+            "arn:aws:execute-api:us-east-1:123:api/prod/GET/admin/gyms"
+        ));
+        assert!(is_admin_path("/admin"));
+        assert!(!is_admin_path(
+            "arn:aws:execute-api:us-east-1:123:api/prod/GET/gyms"
+        ));
+        assert!(!is_admin_path(
+            "arn:aws:execute-api:us-east-1:123:api/prod/GET/auth-request"
+        ));
+    }
+
+    #[test]
+    fn auth_matches_gym_compares_prefixed_gym_id() {
+        let auth = sample_auth("USER", Some(&today()));
+        assert!(auth_matches_gym(auth.clone(), "42"));
+        assert!(!auth_matches_gym(auth.clone(), "99"));
+        assert!(!auth_matches_gym(auth, "GYM#42"));
+    }
+
+    #[test]
+    fn gym_id_from_headers_defaults_to_zero_when_missing() {
+        let headers = HeaderMap::new();
+        assert_eq!(gym_id_from_headers(&headers), "0");
+    }
+
+    #[test]
+    fn gym_id_from_headers_reads_gym_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert("gym", HeaderValue::from_static("42"));
+        assert_eq!(gym_id_from_headers(&headers), "42");
+    }
+
 }
