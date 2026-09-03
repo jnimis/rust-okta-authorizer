@@ -151,6 +151,7 @@ async fn authorize_request(dynamo_client: &Client,
             -> Result<ApiGatewayCustomAuthorizerResponse<AuthResponse>, Error> {
     let user_auths = fetch_auths_for_user(dynamo_client, &user_id).await;
     let is_admin_path = is_admin_path(&method_arn);
+    let is_super_admin_path = is_super_admin_path(&method_arn);
     match user_auths {
         Err(e) => {
             // determine if error is system error or just no auths found
@@ -179,7 +180,7 @@ async fn authorize_request(dynamo_client: &Client,
             }
             let auths_iter = &auths;
             for auth in auths_iter.iter().cloned() {
-                let is_valid_auth = is_auth_valid(&auth, is_admin_path);
+                let is_valid_auth = is_auth_valid(&auth, is_admin_path, is_super_admin_path);
                 if gym_id == "0" && auth.is_default && is_valid_auth {
                     // happy path for single gym auth
                     info!("default gym success");
@@ -253,9 +254,12 @@ fn gym_id_from_headers(headers: &aws_lambda_events::http::HeaderMap) -> &str {
     return gym_id;
 }
 
-fn is_auth_valid(gym_auth: &GymAuth, is_admin_path: bool) -> bool {
+fn is_auth_valid(gym_auth: &GymAuth, is_admin_path: bool, is_super_admin_path: bool) -> bool {
     let dt = today();
     if is_admin_path && !(gym_auth.role == "ADMIN" || gym_auth.role == "SUPER_ADMIN") {
+        return false;
+    }
+    if is_super_admin_path && !(gym_auth.role == "SUPER_ADMIN") {
         return false;
     }
     let Some(access_date) = gym_auth.access_expires.as_option() else {
@@ -267,7 +271,12 @@ fn is_auth_valid(gym_auth: &GymAuth, is_admin_path: bool) -> bool {
 }
 
 fn is_admin_path(method_arn: &str) -> bool {
-    method_arn.contains("admin")
+    // Exclude super-admin routes so they are not treated as normal admin paths.
+    method_arn.contains("admin") && !method_arn.contains("super-admin")
+}
+
+fn is_super_admin_path(method_arn: &str) -> bool {
+    method_arn.contains("super-admin")
 }
 
 fn auth_matches_gym(gym_auth: GymAuth, gym_id: &str) -> bool {
@@ -373,20 +382,20 @@ mod tests {
         let future = sample_auth("USER", Some(&date_offset_from_today(30)));
         let expires_today = sample_auth("USER", Some(&today()));
 
-        assert!(is_auth_valid(&future, false));
-        assert!(is_auth_valid(&expires_today, false));
+        assert!(is_auth_valid(&future, false, false));
+        assert!(is_auth_valid(&expires_today, false, false));
     }
 
     #[test]
     fn is_auth_valid_rejects_past_expiry() {
         let expired = sample_auth("USER", Some(&date_offset_from_today(-1)));
-        assert!(!is_auth_valid(&expired, false));
+        assert!(!is_auth_valid(&expired, false, false));
     }
 
     #[test]
     fn is_auth_valid_rejects_missing_access_expires() {
         let unapproved = sample_auth("USER", None);
-        assert!(!is_auth_valid(&unapproved, false));
+        assert!(!is_auth_valid(&unapproved, false, false));
     }
 
     #[test]
@@ -397,16 +406,36 @@ mod tests {
         let admin = sample_auth("ADMIN", Some(&expires));
         let super_admin = sample_auth("SUPER_ADMIN", Some(&expires));
 
-        assert!(!is_auth_valid(&user, true));
-        assert!(is_auth_valid(&admin, true));
-        assert!(is_auth_valid(&super_admin, true));
-        assert!(!is_auth_valid(&other_strange_role, true));
+        assert!(!is_auth_valid(&user, true, false));
+        assert!(is_auth_valid(&admin, true, false));
+        assert!(is_auth_valid(&super_admin, true, false));
+        assert!(!is_auth_valid(&other_strange_role, true, false));
+    }
+
+    #[test]
+    fn is_auth_valid_super_admin_path_requires_super_admin_role() {
+        // Super-admin paths are not admin paths (see is_admin_path), so flags are (false, true).
+        let expires = date_offset_from_today(30);
+        let user = sample_auth("USER", Some(&expires));
+        let admin = sample_auth("ADMIN", Some(&expires));
+        let super_admin = sample_auth("SUPER_ADMIN", Some(&expires));
+
+        assert!(!is_auth_valid(&user, false, true));
+        assert!(!is_auth_valid(&admin, false, true));
+        assert!(is_auth_valid(&super_admin, false, true));
+    }
+
+    #[test]
+    fn is_auth_valid_super_admin_can_access_admin_paths() {
+        let expires = date_offset_from_today(30);
+        let super_admin = sample_auth("SUPER_ADMIN", Some(&expires));
+        assert!(is_auth_valid(&super_admin, true, false));
     }
 
     #[test]
     fn is_auth_valid_non_admin_path_allows_user_role() {
         let user = sample_auth("USER", Some(&date_offset_from_today(30)));
-        assert!(is_auth_valid(&user, false));
+        assert!(is_auth_valid(&user, false, false));
     }
 
     #[test]
@@ -414,22 +443,49 @@ mod tests {
         let expired_admin = sample_auth("ADMIN", Some(&date_offset_from_today(-1)));
         let unapproved_admin = sample_auth("SUPER_ADMIN", None);
 
-        assert!(!is_auth_valid(&expired_admin, true));
-        assert!(!is_auth_valid(&unapproved_admin, true));
+        assert!(!is_auth_valid(&expired_admin, true, false));
+        assert!(!is_auth_valid(&unapproved_admin, false, true));
     }
 
     #[test]
-    fn is_admin_path_detects_admin_substring() {
+    fn is_admin_path_detects_admin_but_not_super_admin() {
         assert!(is_admin_path(
             "arn:aws:execute-api:us-east-1:123:api/prod/GET/admin/gyms"
         ));
         assert!(is_admin_path("/admin"));
+        assert!(!is_admin_path("/super-admin"));
+        assert!(!is_admin_path(
+            "arn:aws:execute-api:us-east-1:123:api/prod/GET/super-admin/users"
+        ));
         assert!(!is_admin_path(
             "arn:aws:execute-api:us-east-1:123:api/prod/GET/gyms"
         ));
         assert!(!is_admin_path(
             "arn:aws:execute-api:us-east-1:123:api/prod/GET/auth-request"
         ));
+    }
+
+    #[test]
+    fn is_super_admin_path_detects_super_admin_substring() {
+        assert!(is_super_admin_path(
+            "arn:aws:execute-api:us-east-1:123:api/prod/GET/super-admin/users"
+        ));
+        assert!(is_super_admin_path("/super-admin"));
+        assert!(!is_super_admin_path(
+            "arn:aws:execute-api:us-east-1:123:api/prod/GET/admin/gyms"
+        ));
+        assert!(!is_super_admin_path(
+            "arn:aws:execute-api:us-east-1:123:api/prod/GET/gyms"
+        ));
+    }
+
+    #[test]
+    fn admin_and_super_admin_path_flags_are_mutually_exclusive() {
+        let admin_arn = "arn:aws:execute-api:us-east-1:123:api/prod/GET/admin/gyms";
+        let super_arn = "arn:aws:execute-api:us-east-1:123:api/prod/GET/super-admin/users";
+
+        assert!(is_admin_path(admin_arn) && !is_super_admin_path(admin_arn));
+        assert!(!is_admin_path(super_arn) && is_super_admin_path(super_arn));
     }
 
     #[test]
