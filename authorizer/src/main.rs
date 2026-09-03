@@ -150,6 +150,7 @@ async fn authorize_request(dynamo_client: &Client,
         token_data: Result<jsonwebtoken::TokenData<Claims>, anyhow::Error>) 
             -> Result<ApiGatewayCustomAuthorizerResponse<AuthResponse>, Error> {
     let user_auths = fetch_auths_for_user(dynamo_client, &user_id).await;
+    let is_admin_path = is_admin_path(&method_arn);
     match user_auths {
         Err(e) => {
             // determine if error is system error or just no auths found
@@ -252,14 +253,21 @@ fn gym_id_from_headers(headers: &aws_lambda_events::http::HeaderMap) -> &str {
     return gym_id;
 }
 
-fn is_auth_valid(gym_auth: &GymAuth) -> bool {
+fn is_auth_valid(gym_auth: &GymAuth, is_admin_path: bool) -> bool {
     let dt = format!("{}", Local::now().format("%Y-%m-%d"));
+    if is_admin_path && !(gym_auth.role == "ADMIN" || gym_auth.role == "SUPER_ADMIN") {
+        return false;
+    }
     let Some(access_date) = gym_auth.access_expires.as_option() else {
         debug!("no access date, which means the auth hasn't been approved by the gym");
         return false;
     };
     debug!("today: {}; access_expires: {}", dt, access_date);
     *access_date >= *dt
+}
+
+fn is_admin_path(method_arn: &str) -> bool {
+    method_arn.contains("admin")
 }
 
 fn auth_matches_gym(gym_auth: GymAuth, gym_id: &str) -> bool {
