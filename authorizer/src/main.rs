@@ -179,7 +179,7 @@ async fn authorize_request(dynamo_client: &Client,
             }
             let auths_iter = &auths;
             for auth in auths_iter.iter().cloned() {
-                let is_valid_auth = is_auth_valid(&auth);
+                let is_valid_auth = is_auth_valid(&auth, is_admin_path);
                 if gym_id == "0" && auth.is_default && is_valid_auth {
                     // happy path for single gym auth
                     info!("default gym success");
