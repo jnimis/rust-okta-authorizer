@@ -110,7 +110,7 @@ async fn function_handler(
     }
 
     let route_key = method_arn.rsplit('/').next().unwrap_or("");
-    debug!("route key: {}", route_key);
+    info!("route key: {}", route_key);
 
     match route_key {
         "gyms" => {
