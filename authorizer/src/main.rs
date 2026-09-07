@@ -285,6 +285,7 @@ fn auth_matches_gym(gym_auth: GymAuth, gym_id: &str) -> bool {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    cornercam_shared::lambda_config::initialize_logging();
 
     let table_name = std::env::var("KEYS_TABLE_NAME").unwrap();
     
@@ -314,20 +315,6 @@ async fn main() -> Result<(), Error> {
             jwtk_response_to_map(keys_resp)
         }
     };
-
-    let log_level_string = std::env::var("LOG_LEVEL").unwrap_or("ERROR".to_string());
-    let log_level = match log_level_string.as_str() {
-        "DEBUG" => tracing::Level::DEBUG,
-        "INFO" => tracing::Level::INFO,
-        _ => tracing::Level::ERROR
-    };
-
-    tracing_subscriber::fmt() // .json()
-        .with_max_level(log_level)
-        .with_target(false)         // disable printing the name of the module in every log line.
-        // .with_current_span(false)   // only available w JSON logs
-        .with_ansi(false)           // don't include colors
-        .init();
 
     // run(service_fn(function_handler)).await
     run(service_fn(|event| function_handler(&stored_keys, &dynamo_client, event))).await
