@@ -307,12 +307,21 @@ async fn main() -> Result<(), Error> {
             info!("got keys from dynamo");
             jwtk_response_to_map(keys_dynamo)
         }
-        Err(_) => {
-            error!("no keys in dynamo - getting them from auth0 and storing in dynamo");
+        Err(e) => {
+            error!(
+                table = %table_name,
+                error = %e,
+                "failed to load keys from dynamo - fetching from JWKS endpoint and storing in dynamo"
+            );
             let keys_resp = get_keys_from_jwks_endpoint(jwks_endpoint).await.unwrap();
-            // ignoring result of putting record to dynamo
-            let _ =
-                dynamo_service::store_keys_in_dynamo(&dynamo_client, &table_name, &keys_resp).await;
+            match dynamo_service::store_keys_in_dynamo(&dynamo_client, &table_name, &keys_resp).await {
+                Ok(()) => info!(table = %table_name, "stored JWKS keys in dynamo"),
+                Err(store_err) => error!(
+                    table = %table_name,
+                    error = %store_err,
+                    "failed to store JWKS keys in dynamo"
+                ),
+            }
             jwtk_response_to_map(keys_resp)
         }
     };
