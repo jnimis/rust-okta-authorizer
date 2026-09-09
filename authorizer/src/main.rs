@@ -98,6 +98,7 @@ async fn function_handler(
     info!("user: {}", user_id);
 
     if forced_error != "NONE" {
+        error!(error_code = forced_error.clone(), "configured to emit an error: {}", forced_error);
         let message = error_message_for_forced_error(&forced_error).to_string();
         let response: ApiGatewayCustomAuthorizerResponse<AuthResponse> = iam_policy:: not_allowed(
             user_id,
