@@ -228,7 +228,7 @@ async fn authorize_request(dynamo_client: &Client,
 fn error_message_for_forced_error(forced_error: &String) -> &str {
     match forced_error.as_str() {
         "SELECT_GYM" => "Artificial error to redirect to select gym page",
-        _ => "Artificial error"
+        _ => "Artificial error: {forced_error}"
     }
 }
 
